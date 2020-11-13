@@ -1,0 +1,85 @@
+version: "1.0"
+stages:
+  - "clone"
+  - "build"
+  - "metadata"
+  - "gitops"
+
+steps:
+  clone:
+    title: "Cloning repository"
+    type: "git-clone"
+    repo: "codefresh-contrib/gitops-app-source-code"
+    revision: '${{CF_REVISION}}'
+    stage: "clone"
+
+  build:
+    title: "Building Docker image"
+    type: "build"
+    image_name: "kostiscodefresh/simple-web-app"
+    working_directory: "${{clone}}"
+    tags:
+    - "latest"
+    - '${{CF_SHORT_REVISION}}'
+    dockerfile: "Dockerfile"
+    stage: "build"
+    registry: dockerhub  
+  enrich-image:
+    title: Add PR info
+    type: image-enricher
+    stage: "metadata"
+    arguments:
+      IMAGE:  docker.io/kostiscodefresh/simple-web-app:latest
+      BRANCH: '${{CF_BRANCH}}'
+      REPO: 'kostis-codefresh/simple-web-app'
+      GIT_PROVIDER_NAME: github-1
+  jira-issue-extractor:
+    title: Enrich image with jira issues
+    type: jira-issue-extractor
+    stage: "metadata"
+    fail_fast: false
+    arguments:
+      IMAGE: docker.io/kostiscodefresh/simple-web-app:latest
+      JIRA_PROJECT_PREFIX: 'SAAS'
+      MESSAGE: SAAS-8842
+      JIRA_HOST: codefresh-io.atlassian.net
+      JIRA_EMAIL: kostis@codefresh.io
+      JIRA_API_TOKEN: '${{JIRA_TOKEN}}'
+  clone_gitops:
+    title: cloning gitops repo
+    type: git-clone
+    arguments:
+      repo: 'codefresh-contrib/gitops-kubernetes-configuration'
+      revision: 'master'
+    stage: "gitops"
+    when:
+      branch:
+        only:
+          - master    
+  change_manifest:
+    title: "Update k8s manifest"
+    image: "mikefarah/yq" # The image in which command will be executed
+    commands:
+      - yq w -i deployment.yml spec.template.spec.containers[0].image docker.io/kostiscodefresh/simple-web-app:${{CF_SHORT_REVISION}}
+      - cat deployment.yml
+    working_directory: "${{clone_gitops}}" 
+    stage: "gitops"
+    when:
+      branch:
+        only:
+          - master 
+  commit_and_push:
+    title: Commit manifest
+    type: git-commit
+    stage: "gitops"
+    arguments:
+      repo: 'codefresh-contrib/gitops-kubernetes-configuration'
+      git: github-1
+      working_directory: '/codefresh/volume/gitops-kubernetes-configuration'
+      commit_message: Updated manifest
+      git_user_name: my-git-username
+      git_user_email: my-git-email
+    when:
+      branch:
+        only:
+          - master      
