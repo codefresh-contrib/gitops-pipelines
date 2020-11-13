@@ -1,0 +1,28 @@
+version: "1.0"
+stages:
+  - "pre sync"
+  - "sync app"
+  - "post sync"
+steps:
+  pre_sync:
+    title: "Pre sync commands"
+    type: "freestyle" # Run any command
+    image: "alpine:3.9" # The image in which command will be executed
+    commands:
+      - echo "Sending a metrics marker"
+    stage: "pre sync"
+  sync_and_wait:
+    title: Sync ArgoCD app and wait
+    type: argocd-sync
+    arguments:
+      context: "argo-cd"
+      app_name: "${{ARGOCD_APP_NAME}}"
+      wait_healthy: true   
+    stage: "sync app"
+  post_sync:
+    title: "Post sync commands"
+    type: "freestyle" # Run any command
+    image: "alpine:3.9" # The image in which command will be executed
+    commands:
+      - echo "running smoke tests"
+    stage: "post sync"
